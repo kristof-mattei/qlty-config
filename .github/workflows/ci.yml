@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+env:
+  NPM_CONFIG_FUND: false
+
+jobs:
+  validate-hadolint:
+    name: Validate hadolint config
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Set up node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+
+      - name: Validate .hadolint.yaml
+        shell: bash
+        run: |
+          curl --silent --show-error --fail --location --output "${RUNNER_TEMP}/hadolint.json" https://raw.githubusercontent.com/hadolint/hadolint/master/contrib/hadolint.json
+
+          # reject unknown keys at every level, not only the root
+          jq 'walk(if type == "object" and has("properties") and (has("additionalProperties") | not) then . + {additionalProperties: false} else . end)' \
+            "${RUNNER_TEMP}/hadolint.json" > "${RUNNER_TEMP}/hadolint.strict.json"
+
+          pnpm exec ajv validate --spec=draft7 --strict=false -c ajv-formats -s "${RUNNER_TEMP}/hadolint.strict.json" -d .hadolint.yaml
+
+  validate-qlty-source:
+    name: Validate Qlty source
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install Qlty CLI
+        uses: qltysh/qlty-action/install@ebcd284bf32e36a030afe15f1e136c7be08b9506 # v2.5.0
+
+      - name: Validate source.toml
+        shell: bash
+        run: |
+          project="${RUNNER_TEMP}/project"
+          mkdir --parents "${project}/.qlty"
+          git init --quiet "${project}"
+
+          # a project with this checkout as a directory source
+          cat > "${project}/.qlty/qlty.toml" <<EOF
+          config_version = "0"
+
+          [[source]]
+          name = "default"
+          default = true
+
+          [[source]]
+          name = "kristof-mattei"
+          directory = "${GITHUB_WORKSPACE}"
+          EOF
+
+          cd "${project}"
+
+          qlty config validate
+          qlty config show
+
+  format:
+    name: Format
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          show-progress: false
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@73e46992e05b19abd31f2f3c20e0e7370d762115 # v6.1.1
+
+      - name: Set up node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: package.json
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          pnpm install --frozen-lockfile
+
+      - name: Run oxfmt
+        shell: bash
+        run: |
+          pnpm exec oxfmt --check
+
+  all-done:
+    name: All done
+    # this is the job that should be marked as required on GitHub. It's the only one that'll reliably trigger
+    # when any upstream fails: success
+    # when all upstream skips: pass
+    # when all upstream success: success
+    # combination of upstream skip and success: success
+    runs-on: ubuntu-26.04
+    needs:
+      - validate-hadolint
+      - validate-qlty-source
+      - format
+    if: |
+      always()
+    steps:
+      - name: Fail!
+        shell: bash
+        if: |
+          contains(needs.*.result, 'failure') ||
+          contains(needs.*.result, 'cancelled')
+        run: |
+          echo "One / more upstream failed or was cancelled. Failing job..."
+
+          exit 1
+
+      - name: Success!
+        shell: bash
+        run: |
+          echo "Great success!"

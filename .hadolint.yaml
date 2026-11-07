@@ -1,0 +1,8 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/hadolint/hadolint/master/contrib/hadolint.json
+ignored:
+  # `FROM rust-linux-${TARGETARCH}` refers to a build stage, not an image
+  - DL3006
+  # Debian drops superseded package versions from its archive, so a pinned version stops installing
+  - DL3008
+  # each `RUN` is its own layer, so Docker's layer cache reuses the unchanged ones
+  - DL3059
