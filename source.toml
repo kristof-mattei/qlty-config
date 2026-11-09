@@ -48,13 +48,7 @@ default = true
 mode = "comment"
 
 [[plugin]]
-name = "actionlint"
-
-[[plugin]]
 name = "bandit"
-
-[[plugin]]
-name = "clippy"
 
 [[plugin]]
 name = "editorconfig-checker"
@@ -84,16 +78,7 @@ name = "ruff"
 drivers = ["lint"]
 
 [[plugin]]
-name = "rustfmt"
-
-[[plugin]]
-name = "shellcheck"
-
-[[plugin]]
 name = "trufflehog"
-
-[[plugin]]
-name = "zizmor"
 
 [plugins.definitions.hadolint]
 exported_config_paths = [".hadolint.yaml"]
